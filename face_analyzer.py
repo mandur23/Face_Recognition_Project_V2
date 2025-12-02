@@ -41,6 +41,7 @@ class FaceAnalyzer:
             
             # RetinaFace 백엔드 사용 (더 정확한 얼굴 감지)
             # RetinaFace가 없으면 opencv 사용
+            objs = None
             try:
                 objs = DeepFace.analyze(
                     img_path=img, 
@@ -49,15 +50,19 @@ class FaceAnalyzer:
                     enforce_detection=False,
                     silent=True
                 )
-            except:
+            except Exception as e:
                 # RetinaFace 실패 시 opencv 사용
-                objs = DeepFace.analyze(
-                    img_path=img, 
-                    actions=['age', 'gender', 'emotion'],
-                    detector_backend='opencv', 
-                    enforce_detection=False,
-                    silent=True
-                )
+                try:
+                    objs = DeepFace.analyze(
+                        img_path=img, 
+                        actions=['age', 'gender', 'emotion'],
+                        detector_backend='opencv', 
+                        enforce_detection=False,
+                        silent=True
+                    )
+                except Exception as e2:
+                    # 모든 백엔드 실패 시 None 반환
+                    pass
             
             # 모델 로딩 완료 표시
             if not self.model_loaded:
@@ -81,6 +86,10 @@ class FaceAnalyzer:
                 self.is_loading_model = False
                 if self.loading_callback:
                     self.loading_callback(None)
+            # 결과 초기화
+            with self.lock:
+                self.last_results = []
+                self.last_result = None
         finally:
             self.is_analyzing = False
 

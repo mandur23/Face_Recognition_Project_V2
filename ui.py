@@ -45,6 +45,38 @@ class App(ctk.CTk):
         self.prev_time = 0
         self.is_camera_loading = False
 
+    def _on_brightness_change(self, value):
+        """밝기 슬라이더 변경 시 호출"""
+        self.brightness_value_label.configure(text=f"{int(value)}")
+
+    def _on_contrast_change(self, value):
+        """대비 슬라이더 변경 시 호출"""
+        self.contrast_value_label.configure(text=f"{int(value)}")
+
+    def _apply_camera_effects(self, frame):
+        """카메라 효과 적용"""
+        # 좌우 반전
+        if self.flip_horizontal_var.get():
+            frame = cv2.flip(frame, 1)
+
+        # 흑백 모드
+        if self.grayscale_var.get():
+            frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            frame = cv2.cvtColor(frame, cv2.COLOR_GRAY2BGR)
+
+        # 밝기 조절
+        brightness = self.brightness_var.get()
+        if brightness != 0:
+            frame = cv2.convertScaleAbs(frame, alpha=1, beta=brightness)
+
+        # 대비 조절
+        contrast = self.contrast_var.get()
+        if contrast != 0:
+            factor = (259 * (contrast + 255)) / (255 * (259 - contrast))
+            frame = cv2.convertScaleAbs(frame, alpha=factor, beta=0)
+
+        return frame
+
     def _setup_sidebar(self):
         """사이드바 설정"""
         self.sidebar_frame = ctk.CTkFrame(self, width=200, corner_radius=0)
@@ -101,13 +133,94 @@ class App(ctk.CTk):
         )
         self.overlay_switch.grid(row=5, column=0, padx=20, pady=10, sticky="w")
 
+        # 구분선
+        ctk.CTkFrame(self.sidebar_frame, height=2, fg_color="gray30").grid(
+            row=6, column=0, sticky="ew", padx=20, pady=20
+        )
+
+        # 카메라 설정 섹션
+        ctk.CTkLabel(
+            self.sidebar_frame,
+            text="카메라 설정",
+            font=ctk.CTkFont(size=14, weight="bold")
+        ).grid(row=7, column=0, padx=20, pady=(0, 10), sticky="w")
+
+        # 좌우 반전
+        self.flip_horizontal_var = ctk.BooleanVar(value=True)
+        self.flip_switch = ctk.CTkSwitch(
+            self.sidebar_frame,
+            text="좌우 반전",
+            variable=self.flip_horizontal_var
+        )
+        self.flip_switch.grid(row=8, column=0, padx=20, pady=5, sticky="w")
+
+        # 흑백 모드
+        self.grayscale_var = ctk.BooleanVar(value=False)
+        self.grayscale_switch = ctk.CTkSwitch(
+            self.sidebar_frame,
+            text="흑백 모드",
+            variable=self.grayscale_var
+        )
+        self.grayscale_switch.grid(row=9, column=0, padx=20, pady=5, sticky="w")
+
+        # 밝기 조절
+        ctk.CTkLabel(
+            self.sidebar_frame,
+            text="밝기",
+            font=ctk.CTkFont(size=12)
+        ).grid(row=10, column=0, padx=20, pady=(10, 5), sticky="w")
+        
+        self.brightness_var = ctk.DoubleVar(value=0.0)  # -100 ~ 100
+        self.brightness_slider = ctk.CTkSlider(
+            self.sidebar_frame,
+            from_=-100,
+            to=100,
+            variable=self.brightness_var,
+            command=self._on_brightness_change
+        )
+        self.brightness_slider.grid(row=11, column=0, padx=20, pady=5, sticky="ew")
+        self.brightness_value_label = ctk.CTkLabel(
+            self.sidebar_frame,
+            text="0",
+            font=ctk.CTkFont(size=10),
+            text_color="gray"
+        )
+        self.brightness_value_label.grid(row=12, column=0, padx=20, pady=(0, 5))
+
+        # 대비 조절
+        ctk.CTkLabel(
+            self.sidebar_frame,
+            text="대비",
+            font=ctk.CTkFont(size=12)
+        ).grid(row=13, column=0, padx=20, pady=(10, 5), sticky="w")
+        
+        self.contrast_var = ctk.DoubleVar(value=0.0)  # -100 ~ 100
+        self.contrast_slider = ctk.CTkSlider(
+            self.sidebar_frame,
+            from_=-100,
+            to=100,
+            variable=self.contrast_var,
+            command=self._on_contrast_change
+        )
+        self.contrast_slider.grid(row=14, column=0, padx=20, pady=5, sticky="ew")
+        self.contrast_value_label = ctk.CTkLabel(
+            self.sidebar_frame,
+            text="0",
+            font=ctk.CTkFont(size=10),
+            text_color="gray"
+        )
+        self.contrast_value_label.grid(row=15, column=0, padx=20, pady=(0, 10))
+
+        # 그리드 행 조정
+        self.sidebar_frame.grid_rowconfigure(16, weight=1)
+
         # 상태 라벨
         self.status_label = ctk.CTkLabel(
             self.sidebar_frame,
             text="System Ready",
             text_color="gray"
         )
-        self.status_label.grid(row=11, column=0, padx=20, pady=20)
+        self.status_label.grid(row=17, column=0, padx=20, pady=20)
 
     def _setup_video_frame(self):
         """비디오 프레임 설정"""
@@ -139,19 +252,17 @@ class App(ctk.CTk):
             font=ctk.CTkFont(size=18, weight="bold")
         ).pack(pady=20)
 
-        # 정보 카드들
-        self.card_emotion = self.create_info_card(
-            self.info_frame, "현재 감정 (Emotion)", "Waiting...", "😐"
-        )
-        self.card_age = self.create_info_card(
-            self.info_frame, "추정 나이 (Age)", "-- 세", "🎂"
-        )
-        self.card_gender = self.create_info_card(
-            self.info_frame, "성별 (Gender)", "--", "👤"
-        )
+        # 얼굴 수 표시
         self.card_faces = self.create_info_card(
             self.info_frame, "감지된 얼굴 수", "0 명", "👥"
         )
+
+        # 스크롤 가능한 얼굴 정보 영역
+        self.faces_scroll_frame = ctk.CTkScrollableFrame(self.info_frame, fg_color="transparent")
+        self.faces_scroll_frame.pack(fill="both", expand=True, padx=10, pady=10)
+        
+        # 얼굴 카드들을 저장할 딕셔너리
+        self.face_cards = {}
 
         # FPS 표시
         self.fps_label = ctk.CTkLabel(
@@ -240,18 +351,11 @@ class App(ctk.CTk):
 
     def update_dashboard(self, result):
         """우측 정보 패널 업데이트"""
-        # 얼굴 수 업데이트
+        # 모든 얼굴 결과 가져오기
         all_results = self.analyzer.get_all_results()
         face_count = len(all_results)
         self.card_faces['value'].configure(text=f"{face_count} 명")
         
-        if not result:
-            return
-
-        age = result.get('age', 0)
-        gender = result.get('dominant_gender', '?')
-        emotion = result.get('dominant_emotion', '?')
-
         # 감정 매핑
         emotion_map = {
             'angry': ('화남', '😡'),
@@ -262,21 +366,113 @@ class App(ctk.CTk):
             'surprise': ('놀람', '😲'),
             'neutral': ('평온', '😐')
         }
-        emo_text, emo_icon = emotion_map.get(emotion.lower(), (emotion, '🤔'))
 
-        # 성별 매핑
-        gender_text = '남성' if gender == 'Man' else '여성' if gender == 'Woman' else gender
-        gender_icon = '👨' if gender == 'Man' else '👩' if gender == 'Woman' else '👤'
+        # 기존 카드 중 제거할 것 찾기 (얼굴 수가 줄어든 경우)
+        current_face_count = len(self.face_cards)
+        if face_count < current_face_count:
+            for idx in range(face_count, current_face_count):
+                if idx in self.face_cards:
+                    self.face_cards[idx]['card'].destroy()
+                    del self.face_cards[idx]
 
-        # 카드 업데이트
-        self.card_emotion['value'].configure(
-            text=emo_text,
-            text_color="#2CC985" if emotion == 'happy' else "white"
+        # 각 얼굴마다 카드 업데이트 또는 생성
+        for idx, face_result in enumerate(all_results):
+            age = face_result.get('age', 0)
+            gender = face_result.get('dominant_gender', '?')
+            emotion = face_result.get('dominant_emotion', '?')
+
+            emo_text, emo_icon = emotion_map.get(emotion.lower(), (emotion, '🤔'))
+            gender_text = '남성' if gender == 'Man' else '여성' if gender == 'Woman' else gender
+            gender_icon = '👨' if gender == 'Man' else '👩' if gender == 'Woman' else '👤'
+
+            # 기존 카드가 있으면 업데이트, 없으면 생성
+            if idx in self.face_cards:
+                # 카드 업데이트
+                card_data = self.face_cards[idx]
+                card_data['header'].configure(
+                    text=f"Face {idx + 1}",
+                    text_color="#2CC985" if idx == 0 else "#FF6B6B"
+                )
+                card_data['age'].configure(text=f"{age}세")
+                card_data['gender_icon'].configure(text=gender_icon)
+                card_data['gender'].configure(text=gender_text)
+                card_data['emotion_icon'].configure(text=emo_icon)
+                card_data['emotion'].configure(
+                    text=emo_text,
+                    text_color="#2CC985" if emotion == 'happy' else "white"
+                )
+            else:
+                # 새 카드 생성
+                face_card = self.create_face_card(
+                    self.faces_scroll_frame,
+                    idx + 1,
+                    age,
+                    gender_text,
+                    gender_icon,
+                    emo_text,
+                    emo_icon,
+                    emotion == 'happy'
+                )
+                self.face_cards[idx] = face_card
+
+    def create_face_card(self, parent, face_num, age, gender_text, gender_icon, emotion_text, emotion_icon, is_happy):
+        """개별 얼굴 정보 카드 생성"""
+        card = ctk.CTkFrame(parent, fg_color="gray20", corner_radius=8)
+        card.pack(fill="x", padx=10, pady=5)
+
+        # 얼굴 번호 헤더
+        header_frame = ctk.CTkFrame(card, fg_color="transparent")
+        header_frame.pack(fill="x", padx=10, pady=(10, 5))
+        
+        header_label = ctk.CTkLabel(
+            header_frame,
+            text=f"Face {face_num}",
+            font=ctk.CTkFont(size=14, weight="bold"),
+            text_color="#2CC985" if face_num == 1 else "#FF6B6B"
         )
-        self.card_emotion['icon'].configure(text=emo_icon)
-        self.card_age['value'].configure(text=f"{age} 세")
-        self.card_gender['value'].configure(text=gender_text)
-        self.card_gender['icon'].configure(text=gender_icon)
+        header_label.pack(side="left")
+
+        # 정보 프레임
+        info_frame = ctk.CTkFrame(card, fg_color="transparent")
+        info_frame.pack(fill="x", padx=10, pady=(0, 10))
+
+        # 나이
+        age_frame = ctk.CTkFrame(info_frame, fg_color="transparent")
+        age_frame.pack(fill="x", pady=2)
+        ctk.CTkLabel(age_frame, text="🎂", font=ctk.CTkFont(size=16)).pack(side="left", padx=(0, 5))
+        age_label = ctk.CTkLabel(age_frame, text=f"{age}세", font=ctk.CTkFont(size=12))
+        age_label.pack(side="left")
+
+        # 성별
+        gender_frame = ctk.CTkFrame(info_frame, fg_color="transparent")
+        gender_frame.pack(fill="x", pady=2)
+        gender_icon_label = ctk.CTkLabel(gender_frame, text=gender_icon, font=ctk.CTkFont(size=16))
+        gender_icon_label.pack(side="left", padx=(0, 5))
+        gender_label = ctk.CTkLabel(gender_frame, text=gender_text, font=ctk.CTkFont(size=12))
+        gender_label.pack(side="left")
+
+        # 감정
+        emotion_frame = ctk.CTkFrame(info_frame, fg_color="transparent")
+        emotion_frame.pack(fill="x", pady=2)
+        emotion_icon_label = ctk.CTkLabel(emotion_frame, text=emotion_icon, font=ctk.CTkFont(size=16))
+        emotion_icon_label.pack(side="left", padx=(0, 5))
+        emotion_label = ctk.CTkLabel(
+            emotion_frame,
+            text=emotion_text,
+            font=ctk.CTkFont(size=12),
+            text_color="#2CC985" if is_happy else "white"
+        )
+        emotion_label.pack(side="left")
+
+        return {
+            "card": card,
+            "header": header_label,
+            "age": age_label,
+            "gender_icon": gender_icon_label,
+            "gender": gender_label,
+            "emotion_icon": emotion_icon_label,
+            "emotion": emotion_label
+        }
 
     def update_video(self):
         """비디오 프레임 업데이트"""
@@ -288,8 +484,8 @@ class App(ctk.CTk):
             self.after(10, self.update_video)
             return
 
-        # 카메라 좌우 반전
-        frame = cv2.flip(frame, 1)
+        # 카메라 효과 적용 (좌우반전, 밝기, 대비, 흑백)
+        frame = self._apply_camera_effects(frame)
 
         # 분석 및 데이터 갱신
         self.analyzer.process_frame(frame)
